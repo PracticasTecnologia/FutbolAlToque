@@ -1,15 +1,86 @@
-// Pantalla de Partido - Simulación con stamina y velocidad configurable
+// Pantalla de Partido - Simulación MEJORADA con comentarios, eventos ampliados y MVP
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, Alert, BackHandler, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, Alert, BackHandler, Animated, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useGame } from '../context/GameContext';
 
+const { width } = Dimensions.get('window');
+
 // Speed configurations (ms per game minute)
 const SPEED_CONFIG = {
-    normal: 600,    // 45 min = 27 seconds
-    fast: 350,      // 45 min = ~16 seconds
-    turbo: 150,     // 45 min = ~7 seconds
+    normal: 600,
+    fast: 350,
+    turbo: 150,
+};
+
+// Comentarios de narración en vivo
+const COMMENTARY = {
+    goal: [
+        '¡GOOOOOL! ¡Increíble definición!',
+        '¡Se rompe la red! ¡Golazo!',
+        '¡Al fondo de la red! ¡Impresionante!',
+        '¡Qué manera de definir! ¡Gol!',
+        '¡No lo puede creer el portero! ¡GOL!',
+    ],
+    shot: [
+        'Disparo peligroso...',
+        '¡Qué tiro! El portero atento',
+        'Intento desde fuera del área',
+        'Remate que se va desviado',
+    ],
+    save: [
+        '¡Gran parada del portero!',
+        'El arquero salva a su equipo',
+        '¡Increíble atajada!',
+        '¡Manos seguras del guardameta!',
+    ],
+    corner: [
+        'Saque de esquina',
+        'Corner para el equipo',
+        'Balón al corner',
+    ],
+    foul: [
+        'Falta en el medio campo',
+        'El árbitro detiene el juego',
+        'Infracción señalada',
+        'Falta táctica',
+    ],
+    post: [
+        '¡AL PALO! Por poco...',
+        '¡El travesaño salva al equipo!',
+        '¡Increíble! ¡Al poste!',
+    ],
+    yellowCard: [
+        'El árbitro saca la amarilla',
+        'Tarjeta por juego brusco',
+        'Amonestación merecida',
+    ],
+    redCard: [
+        '¡ROJA DIRECTA! ¡Expulsión!',
+        '¡Se queda con 10! ¡Roja!',
+    ],
+    injury: [
+        'Jugador en el suelo, parece lesionado',
+        'Atención médica en el campo',
+    ],
+    start: [
+        '¡Rueda el balón! ¡Comienza el partido!',
+        '¡Arranca el encuentro!',
+    ],
+    halfTime: [
+        'Fin del primer tiempo',
+        'Descanso en el partido',
+    ],
+    fullTime: [
+        '¡Final del partido!',
+        '¡Termina el encuentro!',
+    ],
+};
+
+const getRandomCommentary = (type) => {
+    const comments = COMMENTARY[type] || ['...'];
+    return comments[Math.floor(Math.random() * comments.length)];
 };
 
 export default function MatchScreen({ navigation, route }) {
@@ -32,12 +103,38 @@ export default function MatchScreen({ navigation, route }) {
     const [paused, setPaused] = useState(false);
     const [showSubModal, setShowSubModal] = useState(false);
     const [selectedOut, setSelectedOut] = useState(null);
-    const [stats, setStats] = useState({ homePoss: 50, awayPoss: 50, homeShots: 0, awayShots: 0 });
     const [matchSpeed, setMatchSpeed] = useState('fast');
+    const [commentary, setCommentary] = useState('');
+    const [showGoalCelebration, setShowGoalCelebration] = useState(false);
+    const [lastScorer, setLastScorer] = useState(null);
+    const [showSummary, setShowSummary] = useState(false);
+    const [playerStats, setPlayerStats] = useState({}); // Track player performance
+
+    // Estadísticas ampliadas
+    const [stats, setStats] = useState({
+        homePoss: 50,
+        awayPoss: 50,
+        homeShots: 0,
+        awayShots: 0,
+        homeShotsOnTarget: 0,
+        awayShotsOnTarget: 0,
+        homeCorners: 0,
+        awayCorners: 0,
+        homeFouls: 0,
+        awayFouls: 0,
+        homeSaves: 0,
+        awaySaves: 0,
+        homeYellows: 0,
+        awayYellows: 0,
+        homeReds: 0,
+        awayReds: 0,
+    });
 
     const timer = useRef(null);
     const staminaTimer = useRef(null);
     const pulseAnim = useRef(new Animated.Value(1)).current;
+    const goalAnim = useRef(new Animated.Value(0)).current;
+    const commentaryAnim = useRef(new Animated.Value(1)).current;
     const lineup = getLineupWithPlayers();
     const substitutes = getSubstitutesWithPlayers();
     const subsUsed = state.tactics?.subsUsed || 0;
@@ -55,6 +152,25 @@ export default function MatchScreen({ navigation, route }) {
             ).start();
         }
     }, [status]);
+
+    // Goal celebration animation
+    useEffect(() => {
+        if (showGoalCelebration) {
+            goalAnim.setValue(0);
+            Animated.sequence([
+                Animated.spring(goalAnim, { toValue: 1, tension: 50, friction: 3, useNativeDriver: true }),
+                Animated.delay(2000),
+                Animated.timing(goalAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+            ]).start(() => setShowGoalCelebration(false));
+        }
+    }, [showGoalCelebration]);
+
+    // Commentary fade animation
+    const showCommentaryWithAnim = (text) => {
+        setCommentary(text);
+        commentaryAnim.setValue(0);
+        Animated.timing(commentaryAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+    };
 
     // BLOQUEAR NAVEGACIÓN DURANTE PARTIDO EN CURSO
     useEffect(() => {
@@ -136,7 +252,7 @@ export default function MatchScreen({ navigation, route }) {
                 setMin(m => {
                     const next = m + 1;
                     const avgStamina = lineup.reduce((acc, p) => acc + (p?.stamina || 100), 0) / lineup.length;
-                    const eventChance = 0.1 * (avgStamina / 100);
+                    const eventChance = 0.12 * (avgStamina / 100);
                     if (Math.random() < eventChance) generateEvent(next);
                     updateStats();
 
@@ -144,10 +260,12 @@ export default function MatchScreen({ navigation, route }) {
                         clearInterval(timer.current);
                         setStatus('half');
                         addEvent(45, '⏸️', 'Fin del primer tiempo', 'system');
+                        showCommentaryWithAnim(getRandomCommentary('halfTime'));
                     } else if (status === 'second' && next >= 90) {
                         clearInterval(timer.current);
                         setStatus('end');
                         addEvent(90, '🏁', '¡Final del partido!', 'system');
+                        showCommentaryWithAnim(getRandomCommentary('fullTime'));
                     }
                     return next;
                 });
@@ -162,56 +280,142 @@ export default function MatchScreen({ navigation, route }) {
         setEvents(prev => [...prev, { minute, icon, text, type, id: Date.now() }]);
     };
 
+    const updatePlayerStats = (playerId, stat) => {
+        setPlayerStats(prev => ({
+            ...prev,
+            [playerId]: {
+                ...prev[playerId],
+                [stat]: (prev[playerId]?.[stat] || 0) + 1,
+            }
+        }));
+    };
+
     const generateEvent = (minute) => {
         const rand = Math.random();
         const isHome = Math.random() < 0.5;
         const team = isHome ? home : away;
 
-        // Get players for both teams
         const myTeamPlayers = lineup;
         const opponentTeamId = isHomeTeam ? match.away : match.home;
         const opponentPlayers = state.allPlayers[opponentTeamId] || [];
 
-        // Determine which team's players to use based on event
         const isMyTeamEvent = (isHome && isHomeTeam) || (!isHome && !isHomeTeam);
         const teamPlayers = isMyTeamEvent ? myTeamPlayers : opponentPlayers;
 
         const avgStamina = lineup.reduce((acc, p) => acc + (p?.stamina || 100), 0) / lineup.length;
         const staminaBonus = avgStamina / 100;
 
-        // Get a random player name, preferring attackers for goals
         const getRandomPlayer = (players, preferAttackers = false) => {
-            if (!players || players.length === 0) return 'Jugador';
-
+            if (!players || players.length === 0) return { name: 'Jugador', id: null };
             if (preferAttackers) {
                 const attackers = players.filter(p => ['ST', 'LW', 'RW', 'CAM', 'CF'].includes(p.role));
                 if (attackers.length > 0 && Math.random() < 0.7) {
-                    return attackers[Math.floor(Math.random() * attackers.length)]?.name || 'Jugador';
+                    const p = attackers[Math.floor(Math.random() * attackers.length)];
+                    return { name: p?.name || 'Jugador', id: p?.id };
                 }
             }
-            return players[Math.floor(Math.random() * players.length)]?.name || 'Jugador';
+            const p = players[Math.floor(Math.random() * players.length)];
+            return { name: p?.name || 'Jugador', id: p?.id };
         };
 
-        if (rand < 0.25) {
-            const goalChance = isMyTeamEvent ? 0.5 + (staminaBonus * 0.2) : 0.5;
+        // GOL - 20% de los eventos
+        if (rand < 0.20) {
+            const goalChance = isMyTeamEvent ? 0.45 + (staminaBonus * 0.2) : 0.45;
             if (Math.random() < goalChance) {
                 const scorer = getRandomPlayer(teamPlayers, true);
                 if (isHome) setHg(g => g + 1);
                 else setAg(g => g + 1);
-                addEvent(minute, '⚽', `${minute}' ¡GOOOOL de ${team?.shortName}! ${scorer}`, isHome ? 'home' : 'away');
+                addEvent(minute, '⚽', `${minute}' ¡GOOOOL de ${team?.shortName}! ${scorer.name}`, isHome ? 'home' : 'away');
+                showCommentaryWithAnim(getRandomCommentary('goal'));
+                setLastScorer({ name: scorer.name, team: team?.shortName, isHome });
+                setShowGoalCelebration(true);
+                if (scorer.id) updatePlayerStats(scorer.id, 'goals');
+
+                setStats(s => ({
+                    ...s,
+                    homeShots: s.homeShots + (isHome ? 1 : 0),
+                    awayShots: s.awayShots + (isHome ? 0 : 1),
+                    homeShotsOnTarget: s.homeShotsOnTarget + (isHome ? 1 : 0),
+                    awayShotsOnTarget: s.awayShotsOnTarget + (isHome ? 0 : 1),
+                }));
+            } else {
+                // Tiro a puerta pero parada
+                setStats(s => ({
+                    ...s,
+                    homeShots: s.homeShots + (isHome ? 1 : 0),
+                    awayShots: s.awayShots + (isHome ? 0 : 1),
+                    homeShotsOnTarget: s.homeShotsOnTarget + (isHome ? 1 : 0),
+                    awayShotsOnTarget: s.awayShotsOnTarget + (isHome ? 0 : 1),
+                    homeSaves: s.homeSaves + (isHome ? 0 : 1),
+                    awaySaves: s.awaySaves + (isHome ? 1 : 0),
+                }));
+                addEvent(minute, '🧤', `${minute}' ¡Parada! ${isHome ? away?.shortName : home?.shortName}`, 'save');
+                showCommentaryWithAnim(getRandomCommentary('save'));
             }
-        } else if (rand < 0.6) {
+        }
+        // TIRO FUERA - 25%
+        else if (rand < 0.45) {
             setStats(s => ({
                 ...s,
                 homeShots: s.homeShots + (isHome ? 1 : 0),
                 awayShots: s.awayShots + (isHome ? 0 : 1),
             }));
-        } else if (rand < 0.75) {
+            if (Math.random() < 0.3) {
+                // Al poste
+                addEvent(minute, '🥅', `${minute}' ¡Al palo! ${team?.shortName}`, isHome ? 'home' : 'away');
+                showCommentaryWithAnim(getRandomCommentary('post'));
+            } else {
+                showCommentaryWithAnim(getRandomCommentary('shot'));
+            }
+        }
+        // CORNER - 12%
+        else if (rand < 0.57) {
+            setStats(s => ({
+                ...s,
+                homeCorners: s.homeCorners + (isHome ? 1 : 0),
+                awayCorners: s.awayCorners + (isHome ? 0 : 1),
+            }));
+            addEvent(minute, '🚩', `${minute}' Corner para ${team?.shortName}`, isHome ? 'home' : 'away');
+            showCommentaryWithAnim(getRandomCommentary('corner'));
+        }
+        // FALTA - 18%
+        else if (rand < 0.75) {
+            setStats(s => ({
+                ...s,
+                homeFouls: s.homeFouls + (isHome ? 1 : 0),
+                awayFouls: s.awayFouls + (isHome ? 0 : 1),
+            }));
+            const fouler = getRandomPlayer(teamPlayers);
+            addEvent(minute, '⚠️', `${minute}' Falta de ${fouler.name}`, isHome ? 'home' : 'away');
+            showCommentaryWithAnim(getRandomCommentary('foul'));
+        }
+        // TARJETA AMARILLA - 10%
+        else if (rand < 0.85) {
             const carded = getRandomPlayer(teamPlayers);
-            addEvent(minute, '🟨', `${minute}' Tarjeta amarilla - ${carded}`, isHome ? 'home' : 'away');
-        } else if (rand < 0.78) {
+            setStats(s => ({
+                ...s,
+                homeYellows: s.homeYellows + (isHome ? 1 : 0),
+                awayYellows: s.awayYellows + (isHome ? 0 : 1),
+            }));
+            addEvent(minute, '🟨', `${minute}' Tarjeta amarilla - ${carded.name}`, isHome ? 'home' : 'away');
+            showCommentaryWithAnim(getRandomCommentary('yellowCard'));
+        }
+        // TARJETA ROJA - 3%
+        else if (rand < 0.88) {
             const carded = getRandomPlayer(teamPlayers);
-            addEvent(minute, '🟥', `${minute}' ¡TARJETA ROJA! - ${carded}`, isHome ? 'home' : 'away');
+            setStats(s => ({
+                ...s,
+                homeReds: s.homeReds + (isHome ? 1 : 0),
+                awayReds: s.awayReds + (isHome ? 0 : 1),
+            }));
+            addEvent(minute, '🟥', `${minute}' ¡TARJETA ROJA! - ${carded.name}`, isHome ? 'home' : 'away');
+            showCommentaryWithAnim(getRandomCommentary('redCard'));
+        }
+        // LESIÓN - 2%
+        else if (rand < 0.90) {
+            const injured = getRandomPlayer(teamPlayers);
+            addEvent(minute, '🏥', `${minute}' Posible lesión - ${injured.name}`, isHome ? 'home' : 'away');
+            showCommentaryWithAnim(getRandomCommentary('injury'));
         }
     };
 
@@ -228,11 +432,13 @@ export default function MatchScreen({ navigation, route }) {
     const startMatch = () => {
         setStatus('first');
         addEvent(0, '🏟️', '¡Comienza el partido!', 'system');
+        showCommentaryWithAnim(getRandomCommentary('start'));
     };
 
     const startSecondHalf = () => {
         setStatus('second');
         addEvent(45, '🏟️', '¡Comienza el segundo tiempo!', 'system');
+        showCommentaryWithAnim('¡Arranca el segundo tiempo!');
     };
 
     const finishMatch = () => {
@@ -241,6 +447,30 @@ export default function MatchScreen({ navigation, route }) {
         dispatch({ type: 'NEXT_WEEK' });
         dispatch({ type: 'RECOVER_STAMINA' });
         navigation.goBack();
+    };
+
+    const getMVP = () => {
+        // Find player with most goals, or random from lineup
+        let mvpId = null;
+        let maxGoals = 0;
+        Object.entries(playerStats).forEach(([id, stats]) => {
+            if ((stats.goals || 0) > maxGoals) {
+                maxGoals = stats.goals;
+                mvpId = id;
+            }
+        });
+        if (mvpId) {
+            const player = getPlayer(mvpId);
+            return player ? { name: player.name, goals: maxGoals } : null;
+        }
+        // If no goals, pick random from winning team or player's lineup
+        const myTeamScore = isHomeTeam ? hg : ag;
+        const oppTeamScore = isHomeTeam ? ag : hg;
+        if (myTeamScore >= oppTeamScore && lineup.length > 0) {
+            const randomPlayer = lineup[Math.floor(Math.random() * lineup.length)];
+            return randomPlayer ? { name: randomPlayer.name, goals: 0 } : null;
+        }
+        return null;
     };
 
     const makeSubstitution = (playerIn) => {
@@ -276,6 +506,7 @@ export default function MatchScreen({ navigation, route }) {
     const oppTeamScore = isHomeTeam ? ag : hg;
     const isWinning = myTeamScore > oppTeamScore;
     const isLosing = myTeamScore < oppTeamScore;
+    const mvp = getMVP();
 
     return (
         <View style={styles.container}>
@@ -284,6 +515,19 @@ export default function MatchScreen({ navigation, route }) {
                 colors={isWinning ? ['#064E3B', '#0D1117'] : isLosing ? ['#7F1D1D', '#0D1117'] : ['#1E3A5F', '#0D1117']}
                 style={StyleSheet.absoluteFill}
             />
+
+            {/* Goal Celebration Overlay */}
+            {showGoalCelebration && (
+                <Animated.View style={[styles.goalCelebration, {
+                    opacity: goalAnim,
+                    transform: [{ scale: goalAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) }]
+                }]}>
+                    <Text style={styles.goalEmoji}>⚽🎉</Text>
+                    <Text style={styles.goalText}>¡GOOOOL!</Text>
+                    <Text style={styles.goalScorer}>{lastScorer?.name}</Text>
+                    <Text style={styles.goalTeam}>{lastScorer?.team}</Text>
+                </Animated.View>
+            )}
 
             <SafeAreaView style={styles.safeArea}>
                 {/* Header */}
@@ -308,6 +552,13 @@ export default function MatchScreen({ navigation, route }) {
                         </TouchableOpacity>
                     )}
                 </View>
+
+                {/* Commentary Banner */}
+                {commentary !== '' && status !== 'ready' && (
+                    <Animated.View style={[styles.commentaryBanner, { opacity: commentaryAnim }]}>
+                        <Text style={styles.commentaryText}>💬 {commentary}</Text>
+                    </Animated.View>
+                )}
 
                 {/* Scoreboard */}
                 <View style={styles.scoreBoard}>
@@ -334,7 +585,7 @@ export default function MatchScreen({ navigation, route }) {
                     </View>
                 </View>
 
-                {/* Stats Bar */}
+                {/* Stats Bar - Improved */}
                 {status !== 'ready' && (
                     <View style={styles.statsBar}>
                         <View style={styles.statItem}>
@@ -344,10 +595,27 @@ export default function MatchScreen({ navigation, route }) {
                             </View>
                             <Text style={styles.statValue}>{stats.awayPoss}%</Text>
                         </View>
-                        <View style={styles.statItem}>
-                            <Text style={styles.statLabel}>{stats.homeShots}</Text>
-                            <Text style={styles.statLabelCenter}>Tiros</Text>
-                            <Text style={styles.statLabel}>{stats.awayShots}</Text>
+                        <View style={styles.statRow}>
+                            <View style={styles.statRowItem}>
+                                <Text style={styles.statLabel}>{stats.homeShots}</Text>
+                                <Text style={styles.statLabelCenter}>Tiros</Text>
+                                <Text style={styles.statLabel}>{stats.awayShots}</Text>
+                            </View>
+                            <View style={styles.statRowItem}>
+                                <Text style={styles.statLabel}>{stats.homeShotsOnTarget}</Text>
+                                <Text style={styles.statLabelCenter}>A puerta</Text>
+                                <Text style={styles.statLabel}>{stats.awayShotsOnTarget}</Text>
+                            </View>
+                            <View style={styles.statRowItem}>
+                                <Text style={styles.statLabel}>{stats.homeCorners}</Text>
+                                <Text style={styles.statLabelCenter}>Corners</Text>
+                                <Text style={styles.statLabel}>{stats.awayCorners}</Text>
+                            </View>
+                            <View style={styles.statRowItem}>
+                                <Text style={styles.statLabel}>{stats.homeFouls}</Text>
+                                <Text style={styles.statLabelCenter}>Faltas</Text>
+                                <Text style={styles.statLabel}>{stats.awayFouls}</Text>
+                            </View>
                         </View>
                     </View>
                 )}
@@ -382,6 +650,7 @@ export default function MatchScreen({ navigation, route }) {
                             e.type === 'away' && styles.eventAway,
                             e.type === 'sub' && styles.eventSub,
                             e.type === 'system' && styles.eventSystem,
+                            e.type === 'save' && styles.eventSave,
                         ]}>
                             <Text style={styles.eventIcon}>{e.icon}</Text>
                             <Text style={styles.eventText}>{e.text}</Text>
@@ -420,6 +689,7 @@ export default function MatchScreen({ navigation, route }) {
                             <View style={styles.halfTimeStats}>
                                 <Text style={styles.halfTimeStatText}>Posesión: {stats.homePoss}% - {stats.awayPoss}%</Text>
                                 <Text style={styles.halfTimeStatText}>Tiros: {stats.homeShots} - {stats.awayShots}</Text>
+                                <Text style={styles.halfTimeStatText}>Corners: {stats.homeCorners} - {stats.awayCorners}</Text>
                             </View>
                             <TouchableOpacity style={styles.primaryBtn} onPress={startSecondHalf}>
                                 <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.btnGradient}>
@@ -429,21 +699,96 @@ export default function MatchScreen({ navigation, route }) {
                         </View>
                     )}
 
-                    {status === 'end' && (
+                    {status === 'end' && !showSummary && (
                         <View style={styles.endContainer}>
                             <Text style={styles.endTitle}>
                                 {isWinning ? '🏆 ¡VICTORIA!' : isLosing ? '😔 Derrota' : '🤝 Empate'}
                             </Text>
-                            <TouchableOpacity style={styles.primaryBtn} onPress={finishMatch}>
+                            <TouchableOpacity style={styles.primaryBtn} onPress={() => setShowSummary(true)}>
                                 <LinearGradient colors={['#8B5CF6', '#7C3AED']} style={styles.btnGradient}>
-                                    <Text style={styles.primaryBtnText}>✓ FINALIZAR</Text>
+                                    <Text style={styles.primaryBtnText}>📊 VER RESUMEN</Text>
                                 </LinearGradient>
                             </TouchableOpacity>
                         </View>
                     )}
                 </View>
 
-                {/* Substitution Modal - Simplified */}
+                {/* Match Summary Modal */}
+                <Modal visible={showSummary} transparent animationType="slide">
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.summaryModal}>
+                            <Text style={styles.summaryTitle}>📊 RESUMEN DEL PARTIDO</Text>
+
+                            {/* Final Score */}
+                            <View style={styles.summaryScoreRow}>
+                                <View style={styles.summaryTeam}>
+                                    <View style={[styles.summaryBadge, { backgroundColor: home.color || '#333' }]}>
+                                        <Text style={styles.summaryBadgeText}>{home.shortName?.charAt(0)}</Text>
+                                    </View>
+                                    <Text style={styles.summaryTeamName}>{home.shortName}</Text>
+                                </View>
+                                <Text style={styles.summaryScore}>{hg} - {ag}</Text>
+                                <View style={styles.summaryTeam}>
+                                    <View style={[styles.summaryBadge, { backgroundColor: away.color || '#333' }]}>
+                                        <Text style={styles.summaryBadgeText}>{away.shortName?.charAt(0)}</Text>
+                                    </View>
+                                    <Text style={styles.summaryTeamName}>{away.shortName}</Text>
+                                </View>
+                            </View>
+
+                            {/* MVP */}
+                            {mvp && (
+                                <View style={styles.mvpCard}>
+                                    <Text style={styles.mvpLabel}>🏅 MVP DEL PARTIDO</Text>
+                                    <Text style={styles.mvpName}>{mvp.name}</Text>
+                                    {mvp.goals > 0 && <Text style={styles.mvpGoals}>⚽ {mvp.goals} {mvp.goals === 1 ? 'gol' : 'goles'}</Text>}
+                                </View>
+                            )}
+
+                            {/* Stats Grid */}
+                            <View style={styles.summaryStats}>
+                                <View style={styles.summaryStatRow}>
+                                    <Text style={styles.summaryStatValue}>{stats.homePoss}%</Text>
+                                    <Text style={styles.summaryStatLabel}>Posesión</Text>
+                                    <Text style={styles.summaryStatValue}>{stats.awayPoss}%</Text>
+                                </View>
+                                <View style={styles.summaryStatRow}>
+                                    <Text style={styles.summaryStatValue}>{stats.homeShots}</Text>
+                                    <Text style={styles.summaryStatLabel}>Tiros</Text>
+                                    <Text style={styles.summaryStatValue}>{stats.awayShots}</Text>
+                                </View>
+                                <View style={styles.summaryStatRow}>
+                                    <Text style={styles.summaryStatValue}>{stats.homeShotsOnTarget}</Text>
+                                    <Text style={styles.summaryStatLabel}>A puerta</Text>
+                                    <Text style={styles.summaryStatValue}>{stats.awayShotsOnTarget}</Text>
+                                </View>
+                                <View style={styles.summaryStatRow}>
+                                    <Text style={styles.summaryStatValue}>{stats.homeCorners}</Text>
+                                    <Text style={styles.summaryStatLabel}>Corners</Text>
+                                    <Text style={styles.summaryStatValue}>{stats.awayCorners}</Text>
+                                </View>
+                                <View style={styles.summaryStatRow}>
+                                    <Text style={styles.summaryStatValue}>{stats.homeFouls}</Text>
+                                    <Text style={styles.summaryStatLabel}>Faltas</Text>
+                                    <Text style={styles.summaryStatValue}>{stats.awayFouls}</Text>
+                                </View>
+                                <View style={styles.summaryStatRow}>
+                                    <Text style={styles.summaryStatValue}>{stats.homeSaves}</Text>
+                                    <Text style={styles.summaryStatLabel}>Paradas</Text>
+                                    <Text style={styles.summaryStatValue}>{stats.awaySaves}</Text>
+                                </View>
+                            </View>
+
+                            <TouchableOpacity style={styles.summaryCloseBtn} onPress={finishMatch}>
+                                <LinearGradient colors={['#10B981', '#059669']} style={styles.btnGradient}>
+                                    <Text style={styles.primaryBtnText}>✓ CONTINUAR</Text>
+                                </LinearGradient>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Modal>
+
+                {/* Substitution Modal */}
                 <Modal visible={showSubModal} transparent animationType="slide">
                     <View style={styles.modalOverlay}>
                         <View style={styles.modalContent}>
@@ -501,6 +846,33 @@ const styles = StyleSheet.create({
     safeArea: { flex: 1 },
     error: { color: '#EF4444', textAlign: 'center', marginTop: 50, fontSize: 16 },
 
+    // Goal Celebration
+    goalCelebration: {
+        position: 'absolute',
+        top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 100,
+    },
+    goalEmoji: { fontSize: 60, marginBottom: 16 },
+    goalText: { color: '#10B981', fontSize: 48, fontWeight: 'bold', textShadowColor: '#000', textShadowRadius: 10 },
+    goalScorer: { color: '#FFFFFF', fontSize: 28, fontWeight: 'bold', marginTop: 12 },
+    goalTeam: { color: '#9CA3AF', fontSize: 18, marginTop: 4 },
+
+    // Commentary
+    commentaryBanner: {
+        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+        marginHorizontal: 16,
+        marginBottom: 8,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 12,
+        borderLeftWidth: 3,
+        borderLeftColor: '#3B82F6',
+    },
+    commentaryText: { color: '#E5E7EB', fontSize: 14, fontStyle: 'italic' },
+
     header: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -547,10 +919,12 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.03)',
         borderRadius: 12,
     },
-    statItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+    statItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+    statRow: { flexDirection: 'row', justifyContent: 'space-around' },
+    statRowItem: { alignItems: 'center', flex: 1 },
     statValue: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold', width: 45, textAlign: 'center' },
-    statLabel: { color: '#9CA3AF', fontSize: 12, width: 45, textAlign: 'center' },
-    statLabelCenter: { color: '#6B7280', fontSize: 11, textAlign: 'center' },
+    statLabel: { color: '#9CA3AF', fontSize: 12, textAlign: 'center' },
+    statLabelCenter: { color: '#6B7280', fontSize: 10, textAlign: 'center', marginVertical: 2 },
     possessionBar: { flex: 1, height: 6, backgroundColor: '#374151', borderRadius: 3, marginHorizontal: 10, overflow: 'hidden' },
     possessionFill: { height: '100%', borderRadius: 3 },
 
@@ -584,6 +958,7 @@ const styles = StyleSheet.create({
     eventAway: { borderLeftColor: '#EF4444' },
     eventSub: { borderLeftColor: '#3B82F6' },
     eventSystem: { borderLeftColor: '#8B5CF6', backgroundColor: 'rgba(139,92,246,0.1)' },
+    eventSave: { borderLeftColor: '#F59E0B' },
     eventIcon: { fontSize: 20, marginRight: 12 },
     eventText: { flex: 1, color: '#E5E7EB', fontSize: 13 },
 
@@ -606,6 +981,39 @@ const styles = StyleSheet.create({
 
     endContainer: { alignItems: 'center' },
     endTitle: { fontSize: 28, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 20 },
+
+    // Summary Modal
+    summaryModal: {
+        backgroundColor: '#1F2937',
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
+        padding: 24,
+        maxHeight: '85%',
+    },
+    summaryTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
+    summaryScoreRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', marginBottom: 24 },
+    summaryTeam: { alignItems: 'center' },
+    summaryBadge: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+    summaryBadgeText: { color: '#FFFFFF', fontSize: 20, fontWeight: 'bold' },
+    summaryTeamName: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+    summaryScore: { color: '#FFFFFF', fontSize: 40, fontWeight: 'bold' },
+    mvpCard: {
+        backgroundColor: 'rgba(245, 158, 11, 0.15)',
+        borderWidth: 1,
+        borderColor: '#F59E0B',
+        borderRadius: 16,
+        padding: 16,
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    mvpLabel: { color: '#F59E0B', fontSize: 12, fontWeight: 'bold', marginBottom: 8 },
+    mvpName: { color: '#FFFFFF', fontSize: 20, fontWeight: 'bold' },
+    mvpGoals: { color: '#10B981', fontSize: 14, marginTop: 4 },
+    summaryStats: { marginBottom: 20 },
+    summaryStatRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' },
+    summaryStatValue: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold', width: 50, textAlign: 'center' },
+    summaryStatLabel: { color: '#9CA3AF', fontSize: 14, textAlign: 'center', flex: 1 },
+    summaryCloseBtn: { borderRadius: 16, overflow: 'hidden' },
 
     // Modal
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'flex-end' },

@@ -1,4 +1,4 @@
-// Pantalla Dashboard - Hub principal (Rediseñado)
+// Pantalla Dashboard - Hub principal (MEJORADO con historial, racha y próximos rivales)
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,9 +22,71 @@ export default function DashboardScreen({ navigation }) {
     const pos = getPosition();
     const unreadMessages = state.messages?.filter(m => !m.read).length || 0;
 
+    // Obtener últimos 5 partidos jugados
+    const getLastMatches = () => {
+        return state.fixtures
+            .filter(f => f.played && (f.home === manager.clubId || f.away === manager.clubId))
+            .sort((a, b) => b.week - a.week)
+            .slice(0, 5);
+    };
+
+    // Obtener próximos 3 partidos
+    const getUpcomingMatches = () => {
+        return state.fixtures
+            .filter(f => !f.played && (f.home === manager.clubId || f.away === manager.clubId))
+            .sort((a, b) => a.week - b.week)
+            .slice(0, 3);
+    };
+
+    // Calcular racha actual
+    const getStreak = () => {
+        const lastMatches = getLastMatches();
+        if (lastMatches.length === 0) return { type: 'none', count: 0 };
+
+        let streakType = null;
+        let count = 0;
+
+        for (const match of lastMatches) {
+            const isHome = match.home === manager.clubId;
+            const myGoals = isHome ? match.hg : match.ag;
+            const oppGoals = isHome ? match.ag : match.hg;
+
+            let result;
+            if (myGoals > oppGoals) result = 'W';
+            else if (myGoals < oppGoals) result = 'L';
+            else result = 'D';
+
+            if (streakType === null) {
+                streakType = result;
+                count = 1;
+            } else if (streakType === result) {
+                count++;
+            } else {
+                break;
+            }
+        }
+
+        return { type: streakType, count };
+    };
+
     const handleSave = async () => {
         await saveGame();
         Alert.alert('✅ Guardado', 'Partida guardada correctamente');
+    };
+
+    const lastMatches = getLastMatches();
+    const upcomingMatches = getUpcomingMatches();
+    const streak = getStreak();
+
+    const getResultInfo = (match) => {
+        const isHome = match.home === manager.clubId;
+        const myGoals = isHome ? match.hg : match.ag;
+        const oppGoals = isHome ? match.ag : match.hg;
+        const opponent = isHome ? getTeam(match.away) : getTeam(match.home);
+
+        if (myGoals > oppGoals) return { icon: '✅', color: '#10B981', text: 'V', opponent, score: `${myGoals}-${oppGoals}` };
+        if (myGoals < oppGoals) return { icon: '❌', color: '#EF4444', text: 'D', opponent, score: `${myGoals}-${oppGoals}` };
+        return { icon: '🤝', color: '#F59E0B', text: 'E', opponent, score: `${myGoals}-${oppGoals}` };
     };
 
     const menuItems = [
@@ -94,7 +156,7 @@ export default function DashboardScreen({ navigation }) {
                 </View>
 
                 <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                    {/* Position Card */}
+                    {/* Position & Stats Card */}
                     <View style={styles.card}>
                         <View style={styles.cardHeader}>
                             <Text style={styles.cardTitle}>📊 Posición en la Liga</Text>
@@ -127,6 +189,36 @@ export default function DashboardScreen({ navigation }) {
                                 </View>
                             </View>
                         </View>
+
+                        {/* Recent Form & Streak */}
+                        {lastMatches.length > 0 && (
+                            <View style={styles.formSection}>
+                                <View style={styles.formRow}>
+                                    <Text style={styles.formLabel}>Últimos partidos</Text>
+                                    <View style={styles.formIcons}>
+                                        {lastMatches.map((match, index) => {
+                                            const result = getResultInfo(match);
+                                            return (
+                                                <View
+                                                    key={match.id}
+                                                    style={[styles.formDot, { backgroundColor: result.color }]}
+                                                >
+                                                    <Text style={styles.formDotText}>{result.text}</Text>
+                                                </View>
+                                            );
+                                        })}
+                                    </View>
+                                </View>
+                                {streak.count >= 2 && (
+                                    <View style={styles.streakBadge}>
+                                        <Text style={styles.streakText}>
+                                            {streak.type === 'W' ? '🔥' : streak.type === 'L' ? '📉' : '➡️'}
+                                            {' '}{streak.count} {streak.type === 'W' ? 'victorias seguidas' : streak.type === 'L' ? 'derrotas seguidas' : 'empates seguidos'}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
+                        )}
                     </View>
 
                     {/* Next Match Card */}
@@ -183,6 +275,29 @@ export default function DashboardScreen({ navigation }) {
                             </View>
                         )}
                     </View>
+
+                    {/* Upcoming Matches */}
+                    {upcomingMatches.length > 1 && (
+                        <View style={styles.upcomingCard}>
+                            <Text style={styles.upcomingTitle}>📅 PRÓXIMOS RIVALES</Text>
+                            {upcomingMatches.slice(1).map((match, index) => {
+                                const isHome = match.home === manager.clubId;
+                                const opponent = isHome ? getTeam(match.away) : getTeam(match.home);
+                                return (
+                                    <View key={match.id} style={styles.upcomingRow}>
+                                        <Text style={styles.upcomingWeek}>J{match.week}</Text>
+                                        <View style={[styles.upcomingBadge, { backgroundColor: opponent?.color || '#333' }]}>
+                                            <Text style={styles.upcomingBadgeText}>{opponent?.shortName?.charAt(0)}</Text>
+                                        </View>
+                                        <Text style={styles.upcomingTeam}>{opponent?.shortName}</Text>
+                                        <View style={[styles.upcomingLocation, isHome ? styles.homeLocation : styles.awayLocation]}>
+                                            <Text style={styles.upcomingLocationText}>{isHome ? 'Casa' : 'Fuera'}</Text>
+                                        </View>
+                                    </View>
+                                );
+                            })}
+                        </View>
+                    )}
 
                     {/* Quick Menu Grid */}
                     <Text style={styles.sectionTitle}>Gestión</Text>
@@ -322,11 +437,43 @@ const styles = StyleSheet.create({
     yellowText: { color: '#F59E0B' },
     redText: { color: '#EF4444' },
 
+    // Form Section
+    formSection: {
+        marginTop: 16,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255,255,255,0.1)',
+    },
+    formRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    formLabel: { color: '#9CA3AF', fontSize: 13 },
+    formIcons: { flexDirection: 'row', gap: 6 },
+    formDot: {
+        width: 28,
+        height: 28,
+        borderRadius: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    formDotText: { color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' },
+    streakBadge: {
+        marginTop: 12,
+        backgroundColor: 'rgba(245, 158, 11, 0.15)',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 10,
+        alignSelf: 'flex-start',
+    },
+    streakText: { color: '#F59E0B', fontSize: 13, fontWeight: '600' },
+
     matchCard: {
         backgroundColor: 'rgba(255,255,255,0.05)',
         borderRadius: 20,
         padding: 20,
-        marginBottom: 20,
+        marginBottom: 16,
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.08)',
         alignItems: 'center',
@@ -348,6 +495,32 @@ const styles = StyleSheet.create({
     noMatch: { alignItems: 'center', paddingVertical: 20 },
     noMatchIcon: { fontSize: 48, marginBottom: 12 },
     noMatchText: { color: '#9CA3AF', fontSize: 16 },
+
+    // Upcoming Matches
+    upcomingCard: {
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+    },
+    upcomingTitle: { color: '#9CA3AF', fontSize: 12, fontWeight: '600', letterSpacing: 1, marginBottom: 12 },
+    upcomingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.05)',
+    },
+    upcomingWeek: { color: '#6B7280', fontSize: 12, width: 30 },
+    upcomingBadge: { width: 32, height: 32, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+    upcomingBadgeText: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold' },
+    upcomingTeam: { color: '#FFFFFF', fontSize: 14, flex: 1 },
+    upcomingLocation: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+    homeLocation: { backgroundColor: 'rgba(16, 185, 129, 0.2)' },
+    awayLocation: { backgroundColor: 'rgba(239, 68, 68, 0.2)' },
+    upcomingLocationText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' },
 
     sectionTitle: { color: '#6B7280', fontSize: 12, fontWeight: '600', letterSpacing: 1, marginBottom: 12 },
     menuGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },

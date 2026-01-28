@@ -1,4 +1,4 @@
-// Pantalla de Tabla de Posiciones - Rediseñada
+// Pantalla de Tabla de Posiciones - MEJORADA con forma reciente y diferencia con líder
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,6 +10,31 @@ export default function StandingsScreen({ navigation }) {
     const standings = getStandings();
     const myTeamId = state.manager?.clubId;
     const myTeam = getTeam(myTeamId);
+    const leaderPts = standings.length > 0 ? standings[0].pts : 0;
+
+    // Obtener forma reciente de un equipo (últimos 5 partidos)
+    const getTeamForm = (teamId) => {
+        const teamMatches = state.fixtures
+            .filter(f => f.played && (f.home === teamId || f.away === teamId))
+            .sort((a, b) => b.week - a.week)
+            .slice(0, 5);
+
+        return teamMatches.map(match => {
+            const isHome = match.home === teamId;
+            const myGoals = isHome ? match.hg : match.ag;
+            const oppGoals = isHome ? match.ag : match.hg;
+
+            if (myGoals > oppGoals) return 'W';
+            if (myGoals < oppGoals) return 'L';
+            return 'D';
+        });
+    };
+
+    const getFormColor = (result) => {
+        if (result === 'W') return '#10B981';
+        if (result === 'L') return '#EF4444';
+        return '#F59E0B';
+    };
 
     return (
         <View style={styles.container}>
@@ -47,16 +72,22 @@ export default function StandingsScreen({ navigation }) {
                             <Text style={styles.miniStatLabel}>PTS</Text>
                         </View>
                     </View>
+                    {/* Diferencia con líder */}
+                    {standings.findIndex(s => s.id === myTeamId) > 0 && (
+                        <View style={styles.diffBadge}>
+                            <Text style={styles.diffText}>
+                                -{leaderPts - (standings.find(s => s.id === myTeamId)?.pts || 0)}
+                            </Text>
+                        </View>
+                    )}
                 </View>
 
                 {/* Table Header */}
                 <View style={styles.tableHead}>
                     <Text style={[styles.colPos, styles.headText]}>#</Text>
                     <Text style={[styles.colTeam, styles.headText]}>Equipo</Text>
+                    <Text style={[styles.colForm, styles.headText]}>Forma</Text>
                     <Text style={[styles.colStat, styles.headText]}>PJ</Text>
-                    <Text style={[styles.colStat, styles.headText]}>G</Text>
-                    <Text style={[styles.colStat, styles.headText]}>E</Text>
-                    <Text style={[styles.colStat, styles.headText]}>P</Text>
                     <Text style={[styles.colStat, styles.headText]}>DG</Text>
                     <Text style={[styles.colPts, styles.headText]}>PTS</Text>
                 </View>
@@ -72,6 +103,8 @@ export default function StandingsScreen({ navigation }) {
                         const gd = item.gf - item.ga;
                         const isTop = index < 4;
                         const isBottom = index >= standings.length - 3;
+                        const form = getTeamForm(item.id);
+                        const ptsDiff = leaderPts - item.pts;
 
                         return (
                             <View style={[
@@ -93,16 +126,32 @@ export default function StandingsScreen({ navigation }) {
                                     <View style={[styles.teamBadge, { backgroundColor: team?.color || '#333' }]}>
                                         <Text style={styles.teamBadgeText}>{team?.shortName?.charAt(0)}</Text>
                                     </View>
-                                    <Text style={[styles.teamName, isMine && styles.myTeamText]} numberOfLines={1}>
-                                        {team?.shortName}
-                                    </Text>
+                                    <View style={styles.teamInfoCol}>
+                                        <Text style={[styles.teamName, isMine && styles.myTeamText]} numberOfLines={1}>
+                                            {team?.shortName}
+                                        </Text>
+                                        {index > 0 && (
+                                            <Text style={styles.ptsDiffText}>-{ptsDiff}</Text>
+                                        )}
+                                    </View>
+                                </View>
+
+                                {/* Recent Form */}
+                                <View style={styles.formContainer}>
+                                    {form.length > 0 ? (
+                                        form.map((result, i) => (
+                                            <View
+                                                key={i}
+                                                style={[styles.formDot, { backgroundColor: getFormColor(result) }]}
+                                            />
+                                        ))
+                                    ) : (
+                                        <Text style={styles.noForm}>-</Text>
+                                    )}
                                 </View>
 
                                 {/* Stats */}
                                 <Text style={[styles.colStat, styles.cell]}>{item.p}</Text>
-                                <Text style={[styles.colStat, styles.cell, styles.greenText]}>{item.w}</Text>
-                                <Text style={[styles.colStat, styles.cell, styles.grayText]}>{item.d}</Text>
-                                <Text style={[styles.colStat, styles.cell, styles.redText]}>{item.l}</Text>
                                 <Text style={[styles.colStat, styles.cell, gd > 0 && styles.greenText, gd < 0 && styles.redText]}>
                                     {gd > 0 ? `+${gd}` : gd}
                                 </Text>
@@ -116,13 +165,30 @@ export default function StandingsScreen({ navigation }) {
 
                 {/* Legend */}
                 <View style={styles.legend}>
-                    <View style={styles.legendItem}>
-                        <View style={[styles.legendIndicator, { backgroundColor: '#10B981' }]} />
-                        <Text style={styles.legendText}>Clasificación Copa</Text>
+                    <View style={styles.legendSection}>
+                        <View style={styles.legendItem}>
+                            <View style={[styles.legendIndicator, { backgroundColor: '#10B981' }]} />
+                            <Text style={styles.legendText}>Copa</Text>
+                        </View>
+                        <View style={styles.legendItem}>
+                            <View style={[styles.legendIndicator, { backgroundColor: '#EF4444' }]} />
+                            <Text style={styles.legendText}>Descenso</Text>
+                        </View>
                     </View>
-                    <View style={styles.legendItem}>
-                        <View style={[styles.legendIndicator, { backgroundColor: '#EF4444' }]} />
-                        <Text style={styles.legendText}>Zona de Descenso</Text>
+                    <View style={styles.legendSection}>
+                        <Text style={styles.legendTitle}>Forma:</Text>
+                        <View style={styles.legendItem}>
+                            <View style={[styles.formDotLegend, { backgroundColor: '#10B981' }]} />
+                            <Text style={styles.legendText}>V</Text>
+                        </View>
+                        <View style={styles.legendItem}>
+                            <View style={[styles.formDotLegend, { backgroundColor: '#F59E0B' }]} />
+                            <Text style={styles.legendText}>E</Text>
+                        </View>
+                        <View style={styles.legendItem}>
+                            <View style={[styles.formDotLegend, { backgroundColor: '#EF4444' }]} />
+                            <Text style={styles.legendText}>D</Text>
+                        </View>
                     </View>
                 </View>
             </SafeAreaView>
@@ -169,10 +235,17 @@ const styles = StyleSheet.create({
     myTeamInfo: { flex: 1 },
     myTeamName: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
     myTeamPos: { color: '#10B981', fontSize: 14, marginTop: 2 },
-    myTeamStats: { alignItems: 'flex-end' },
+    myTeamStats: { alignItems: 'flex-end', marginRight: 12 },
     miniStat: { alignItems: 'center' },
     miniStatValue: { color: '#F59E0B', fontSize: 28, fontWeight: 'bold' },
     miniStatLabel: { color: '#6B7280', fontSize: 11 },
+    diffBadge: {
+        backgroundColor: 'rgba(239, 68, 68, 0.2)',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 10,
+    },
+    diffText: { color: '#EF4444', fontSize: 14, fontWeight: 'bold' },
 
     tableHead: {
         flexDirection: 'row',
@@ -224,8 +297,26 @@ const styles = StyleSheet.create({
         marginRight: 10,
     },
     teamBadgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: 'bold' },
+    teamInfoCol: { flex: 1 },
     teamName: { color: '#FFFFFF', fontSize: 13, fontWeight: '500' },
     myTeamText: { color: '#10B981', fontWeight: 'bold' },
+    ptsDiffText: { color: '#6B7280', fontSize: 10, marginTop: 1 },
+
+    // Form column
+    colForm: { width: 60, textAlign: 'center' },
+    formContainer: {
+        width: 60,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: 3,
+    },
+    formDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+    },
+    noForm: { color: '#6B7280', fontSize: 12 },
+
     colStat: { width: 28, textAlign: 'center' },
     colPts: { width: 36, textAlign: 'center' },
     ptsContainer: {
@@ -238,17 +329,23 @@ const styles = StyleSheet.create({
 
     greenText: { color: '#10B981' },
     redText: { color: '#EF4444' },
-    grayText: { color: '#6B7280' },
 
     legend: {
-        flexDirection: 'row',
-        justifyContent: 'center',
         paddingVertical: 16,
-        gap: 24,
+        paddingHorizontal: 16,
         borderTopWidth: 1,
         borderTopColor: 'rgba(255,255,255,0.08)',
     },
+    legendSection: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 16,
+        marginBottom: 8,
+    },
+    legendTitle: { color: '#6B7280', fontSize: 11, marginRight: 4 },
     legendItem: { flexDirection: 'row', alignItems: 'center' },
-    legendIndicator: { width: 12, height: 4, borderRadius: 2, marginRight: 8 },
-    legendText: { color: '#6B7280', fontSize: 12 },
+    legendIndicator: { width: 12, height: 4, borderRadius: 2, marginRight: 6 },
+    formDotLegend: { width: 10, height: 10, borderRadius: 5, marginRight: 4 },
+    legendText: { color: '#6B7280', fontSize: 11 },
 });
