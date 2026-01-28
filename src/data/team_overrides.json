@@ -1,0 +1,12 @@
+{
+    "_comment": "Archivo para editar datos de equipos. Los cambios se aplican al cargar el juego.",
+    "_howToUse": "Usa el ID del equipo (ej: 'river', 'boca') y modifica los valores que quieras.",
+    "_example": {
+        "river": {
+            "budget": 50000000,
+            "rep": 95,
+            "name": "River Plate"
+        }
+    },
+    "overrides": {}
+}

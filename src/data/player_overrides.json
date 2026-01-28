@@ -1,0 +1,14 @@
+{
+  "_comment": "Archivo para editar stats de jugadores manualmente. Usa el ID del jugador como clave.",
+  "_howToUse": "Agrega el ID del jugador y las stats que quieras modificar. El overall se recalcula automáticamente.",
+  "_example": {
+    "api_12345": {
+      "stats": { "pac": 95, "sho": 90, "pas": 88, "dri": 92, "def": 35, "phy": 70 },
+      "name": "Nombre Corregido",
+      "age": 25
+    }
+  },
+  "overrides": {
+    
+  }
+}
